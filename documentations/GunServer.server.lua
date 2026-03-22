@@ -22,6 +22,10 @@ local Debris            = game:GetService("Debris")
 -------------------------------------------------
 local fireEvent = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("FireEvent")
 
+-- Burst VFX: blood explosion on the target when 3rd mark pops
+local vfxFolder        = ReplicatedStorage:WaitForChild("VFX")
+local bloodExplosionVFX = vfxFolder:WaitForChild("BloodExplosion")
+
 -------------------------------------------------
 -- CONFIG: GUN DAMAGE
 -------------------------------------------------
@@ -51,7 +55,7 @@ local MARK_TRANSPARENCY = {
 
 -- The image that appears above the enemy's head (vampire icon / bat / blood drop)
 -- Replace this with your own decal/image ID!
-local MARK_IMAGE_ID = "rbxassetid://6031075938"  -- default skull icon, replace with your logo
+local MARK_IMAGE_ID = "rbxassetid://107666365975187"  -- default skull icon, replace with your logo
 
 -------------------------------------------------
 -- MARK TRACKING: { [targetModel] = { shooter = player, stacks = number, gui = BillboardGui } }
@@ -113,8 +117,39 @@ end
 local function triggerBurst(targetModel, shooterPlayer)
 	local targetHumanoid = targetModel:FindFirstChildOfClass("Humanoid")
 	if targetHumanoid and targetHumanoid.Health > 0 then
-		-- Deal burst damage
 		targetHumanoid:TakeDamage(BURST_DAMAGE)
+	end
+
+	-- Spawn BloodExplosion VFX on the target
+	local targetRoot = targetModel:FindFirstChild("HumanoidRootPart") or targetModel:FindFirstChild("Torso")
+	if targetRoot then
+		local explosionClone = bloodExplosionVFX:Clone()
+
+		if explosionClone:IsA("Model") then
+			explosionClone:PivotTo(targetRoot.CFrame)
+			for _, part in explosionClone:GetDescendants() do
+				if part:IsA("BasePart") then
+					part.Anchored = true
+					part.CanCollide = false
+				end
+			end
+		elseif explosionClone:IsA("BasePart") then
+			explosionClone.CFrame = targetRoot.CFrame
+			explosionClone.Anchored = true
+			explosionClone.CanCollide = false
+		end
+
+		explosionClone.Parent = workspace
+
+		-- Fire all particle emitters once for the burst effect
+		for _, emitter in explosionClone:GetDescendants() do
+			if emitter:IsA("ParticleEmitter") then
+				emitter.Enabled = true
+				emitter:Emit(50) -- big burst of blood
+			end
+		end
+
+		Debris:AddItem(explosionClone, 1) -- reduced from 2 to 1 second
 	end
 
 	-- Heal the vampire
