@@ -22,16 +22,19 @@ leftMuzzle.Name = "Muzzle"
 rightMuzzle.Name = "Muzzle"
 
 local fireEvent = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("FireEvent")
+local ultimateEvent = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("UltimateEvent")
 
-local MAX_AMMO      = 12
-local FIRE_COOLDOWN = 0.15     
-local MAX_DISTANCE  = 500      
+local MAX_AMMO          = 12
+local FIRE_COOLDOWN     = 0.15     
+local MAX_DISTANCE      = 500
+local ULTIMATE_COOLDOWN = 2      -- seconds between ultimates (tweak as needed)
 
-local ammo      = MAX_AMMO
-local shootLeft = true         
-local lastFire  = 0
-local reloading = false
-local equipped  = false
+local ammo         = MAX_AMMO
+local shootLeft    = true         
+local lastFire     = 0
+local lastUltimate = 0
+local reloading    = false
+local equipped     = false
 
 -- Dual-gun aiming animation (upper body only)
 local DUAL_AIM_ANIM_ID = "rbxassetid://90957862907806"
@@ -281,13 +284,24 @@ end)
 tool.Activated:Connect(fire)
 
 -------------------------------------------------
--- R-KEY RELOAD
+-- R-KEY RELOAD  /  Q-KEY ULTIMATE
 -------------------------------------------------
 UserInputService.InputBegan:Connect(function(input, processed)
 	if processed then return end
+	if not equipped then return end
+
 	if input.KeyCode == Enum.KeyCode.R then
-		if equipped and not reloading and ammo < MAX_AMMO then
+		if not reloading and ammo < MAX_AMMO then
 			reload()
+		end
+
+	elseif input.KeyCode == Enum.KeyCode.Q then
+		local now = tick()
+		if now - lastUltimate >= ULTIMATE_COOLDOWN then
+			lastUltimate = now
+			if ultimateEvent then
+				ultimateEvent:FireServer(mouse.Hit.Position)
+			end
 		end
 	end
 end)

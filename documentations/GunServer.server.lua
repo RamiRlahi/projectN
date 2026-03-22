@@ -16,15 +16,19 @@
 local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Debris            = game:GetService("Debris")
+local TweenService      = game:GetService("TweenService")
 
 -------------------------------------------------
 -- REFERENCES
 -------------------------------------------------
 local fireEvent = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("FireEvent")
+local ultimateEvent = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("UltimateEvent")
 
--- Burst VFX: blood explosion on the target when 3rd mark pops
-local vfxFolder        = ReplicatedStorage:WaitForChild("VFX")
+-- VFX References
+local vfxFolder         = ReplicatedStorage:WaitForChild("VFX")
 local bloodExplosionVFX = vfxFolder:WaitForChild("BloodExplosion")
+local bloodSummonVFX    = vfxFolder:WaitForChild("BloodSummonDog")
+local mouthDogVFX       = vfxFolder:WaitForChild("MouthDog")
 
 -------------------------------------------------
 -- CONFIG: GUN DAMAGE
@@ -310,10 +314,189 @@ end)
 
 -- Cleanup marks when a character dies or leaves
 Players.PlayerRemoving:Connect(function(plr)
-	-- Remove any marks this player placed
 	for model, data in pairs(activeMarks) do
 		if data.shooter == plr then
 			cleanupMark(model)
+		end
+	end
+end)
+
+-------------------------------------------------
+-- ULTIMATE CONFIG: CERBERUS BURST
+-- Change these values to tweak sizes and timing!
+-------------------------------------------------
+local ULT_DAMAGE         = 60       -- damage to each enemy in range
+local ULT_RADIUS         = 15       -- damage radius in studs
+local ULT_HEAL_PER_HIT   = 15       -- HP healed per enemy hit
+local ULT_COOLDOWN       = 2        -- ⚠️ IMPORTANT: Must match ULTIMATE_COOLDOWN in GunLogic!
+
+local CIRCLE_SCALE       = 0.2      -- ← resize the circle (0.5 = half, 1 = original, 2 = double)
+local CIRCLE_GROW_TIME   = 0.3      -- seconds for the circle to grow from nothing
+local CIRCLE_ROTATION    = CFrame.Angles(math.rad(-90), 0, 0)  -- lies FLAT on the ground
+
+local MOUTH_SCALE        = 0.18      -- ← resize the dog mouth
+local MOUTH_RISE_HEIGHT  = 15       -- how far the mouth starts below ground (studs)
+local MOUTH_RISE_TIME    = 0.35     -- seconds for the mouth to rise up
+local MOUTH_SNAP_TIME    = 0.15     -- seconds for the snap
+local MOUTH_SNAP_SHRINK  = 0.7     -- how much it squishes on snap (0.7 = 70% of original — try 0.5 for more dramatic)
+local MOUTH_ROTATION = CFrame.Angles(0, 0, math.rad(-100))
+
+local ATTACK_DELAY       = 0.4      -- delay between circle appearing and mouth emerging
+
+local ultCooldowns = {}  -- per-player cooldown tracking
+
+-------------------------------------------------
+-- ULTIMATE: CERBERUS BURST
+-------------------------------------------------
+ultimateEvent.OnServerEvent:Connect(function(firingPlayer, targetPos)
+	if not isAlive(firingPlayer) then return end
+	if typeof(targetPos) ~= "Vector3" then return end
+
+	-- Server-side cooldown check
+	local now = tick()
+	if ultCooldowns[firingPlayer] and (now - ultCooldowns[firingPlayer]) < ULT_COOLDOWN then
+		return
+	end
+	ultCooldowns[firingPlayer] = now
+
+	------------------------------------------------------------
+	-- 1. BLOOD SUMMONING CIRCLE  (glued to ground, grows from nothing)
+	------------------------------------------------------------
+	-- Raycast downward to find the exact ground position
+	local groundParams = RaycastParams.new()
+	groundParams.FilterDescendantsInstances = { firingPlayer.Character }
+	groundParams.FilterType = Enum.RaycastFilterType.Exclude
+	local groundRay = workspace:Raycast(targetPos + Vector3.new(0, 5, 0), Vector3.new(0, -50, 0), groundParams)
+	local groundY = groundRay and groundRay.Position.Y or targetPos.Y
+	local groundPos = Vector3.new(targetPos.X, groundY, targetPos.Z)
+
+	local circle = bloodSummonVFX:Clone()
+
+	if circle:IsA("Model") then
+		circle:ScaleTo(0.01)
+		circle:PivotTo(CFrame.new(groundPos) * CIRCLE_ROTATION)  -- flat, glued to ground
+
+		for _, part in circle:GetDescendants() do
+			if part:IsA("BasePart") then
+				part.Anchored = true
+				part.CanCollide = false
+			end
+		end
+	end
+
+	circle.Parent = workspace
+
+	-- Grow outward
+	if circle:IsA("Model") then
+		task.spawn(function()
+			local startScale = 0.01
+			local endScale = CIRCLE_SCALE
+			local elapsed = 0
+			while elapsed < CIRCLE_GROW_TIME do
+				local dt = game:GetService("RunService").Heartbeat:Wait()
+				elapsed = elapsed + dt
+				local alpha = math.clamp(elapsed / CIRCLE_GROW_TIME, 0, 1)
+				local eased = 1 - (1 - alpha) ^ 3
+				circle:ScaleTo(startScale + (endScale - startScale) * eased)
+			end
+			circle:ScaleTo(endScale)
+		end)
+	end
+
+	Debris:AddItem(circle, 3)
+
+	------------------------------------------------------------
+	-- 2. WAIT, THEN SPAWN DOG MOUTH
+	------------------------------------------------------------
+	task.wait(ATTACK_DELAY)
+
+	local mouth = mouthDogVFX:Clone()
+
+	-- Start the mouth BELOW the ground (rises up through the circle)
+	local startPos = groundPos + Vector3.new(0, -MOUTH_RISE_HEIGHT, 0)
+	local endPos   = groundPos + Vector3.new(0, 4, 0)  -- rises above the sigil
+
+	if mouth:IsA("Model") then
+		mouth:ScaleTo(MOUTH_SCALE)
+		mouth:PivotTo(CFrame.new(startPos) * MOUTH_ROTATION)  -- correct orientation
+
+		for _, part in mouth:GetDescendants() do
+			if part:IsA("BasePart") then
+				part.Anchored = true
+				part.CanCollide = false
+			end
+		end
+	end
+
+	mouth.Parent = workspace
+
+	------------------------------------------------------------
+	-- 3. ANIMATE: MOUTH RISES UP FROM CIRCLE
+	------------------------------------------------------------
+	if mouth:IsA("Model") then
+		task.spawn(function()
+			-- PHASE 1: Rise up
+			local elapsed = 0
+			while elapsed < MOUTH_RISE_TIME do
+				local dt = game:GetService("RunService").Heartbeat:Wait()
+				elapsed = elapsed + dt
+				local alpha = math.clamp(elapsed / MOUTH_RISE_TIME, 0, 1)
+				-- Ease out: fast at start, slows at top
+				local eased = 1 - (1 - alpha) ^ 2
+				local currentPos = startPos:Lerp(endPos, eased)
+				mouth:PivotTo(CFrame.new(currentPos) * MOUTH_ROTATION)
+			end
+			mouth:PivotTo(CFrame.new(endPos) * MOUTH_ROTATION)
+
+			-- PHASE 2: Snap shut (squish Y scale quickly — more dramatic)
+			local snapStart = MOUTH_SCALE
+			local snapEnd = MOUTH_SCALE * MOUTH_SNAP_SHRINK
+			local snapElapsed = 0
+			while snapElapsed < MOUTH_SNAP_TIME do
+				local dt = game:GetService("RunService").Heartbeat:Wait()
+				snapElapsed = snapElapsed + dt
+				local alpha = math.clamp(snapElapsed / MOUTH_SNAP_TIME, 0, 1)
+				local current = snapStart + (snapEnd - snapStart) * alpha
+				mouth:ScaleTo(current)
+			end
+		end)
+	end
+
+	-- Fire particles if any
+	for _, desc in mouth:GetDescendants() do
+		if desc:IsA("ParticleEmitter") then
+			desc:Emit(100)
+		end
+	end
+
+	Debris:AddItem(mouth, 2)
+
+	------------------------------------------------------------
+	-- 4. AREA DAMAGE
+	------------------------------------------------------------
+	local overlap = OverlapParams.new()
+	overlap.FilterDescendantsInstances = { firingPlayer.Character }
+	overlap.FilterType = Enum.RaycastFilterType.Exclude
+
+	local parts = workspace:GetPartBoundsInRadius(targetPos, ULT_RADIUS, overlap)
+	local hitHumanoids = {}
+
+	for _, part in parts do
+		local model = part:FindFirstAncestorOfClass("Model")
+		if model then
+			local hum = model:FindFirstChildOfClass("Humanoid")
+			if hum and hum.Health > 0 and not hitHumanoids[hum] then
+				hitHumanoids[hum] = true
+				hum:TakeDamage(ULT_DAMAGE)
+
+				-- Heal the vampire per enemy hit
+				if isAlive(firingPlayer) then
+					local shooterHum = firingPlayer.Character:FindFirstChildOfClass("Humanoid")
+					if shooterHum then
+						shooterHum.Health = math.min(shooterHum.Health + ULT_HEAL_PER_HIT, shooterHum.MaxHealth)
+					end
+				end
+			end
 		end
 	end
 end)
