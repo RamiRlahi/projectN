@@ -1,7 +1,6 @@
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
-local Debris = game:GetService("Debris")
-local TweenService = game:GetService("TweenService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
@@ -10,53 +9,50 @@ local humanoid = character:WaitForChild("Humanoid")
 local rootPart = character:WaitForChild("HumanoidRootPart")
 
 -- Dash settings
-local DASH_FORCE = 100
-local DASH_DURATION = 0.2
-local DASH_COOLDOWN = 1.0
+local DASH_FORCE = 180
+local DASH_DURATION = 0.15
+local DASH_COOLDOWN = 0 -- Removed delay between individual dashes
+local MAX_CHARGES = 3
+local CHARGE_REGEN_TIME = 4.0 -- Time to regen one charge
+
+-- State
 local isDashing = false
+local currentCharges = MAX_CHARGES
 local lastDashTime = 0
+local lastRegenTime = tick()
 
--- VFX Settings
-local GHOST_COUNT = 5
-local GHOST_LIFETIME = 0.4
+-- Set initial attributes for GUI
+character:SetAttribute("DashCharges", currentCharges)
+character:SetAttribute("MaxDashCharges", MAX_CHARGES)
+character:SetAttribute("DashRegenPercent", 0)
 
-local function createGhostEffect()
-	-- Create a visual "after-image" of the character
-	character.Archivable = true
-	local ghost = character:Clone()
-	character.Archivable = false
-	
-	-- Remove scripts and physics from ghost
-	for _, desc in ghost:GetDescendants() do
-		if desc:IsA("LuaSourceContainer") or desc:IsA("ForceEffect") or desc:IsA("Humanoid") then
-			desc:Destroy()
-		elseif desc:IsA("BasePart") then
-			desc.CanCollide = false
-			desc.Anchored = true
-			desc.Material = Enum.Material.Neon
-			desc.Transparency = 0.5
-			desc.Color = Color3.fromRGB(0, 170, 255) -- Dash color
-			
-			-- Tween transparency to fade out
-			TweenService:Create(desc, TweenInfo.new(GHOST_LIFETIME), {Transparency = 1}):Play()
-		end
-	end
-	
-	ghost.Parent = workspace
-	Debris:AddItem(ghost, GHOST_LIFETIME)
-end
+-- Speed VFX part (ReplicatedStorage > VFX > Speed)
+local speedVFX = ReplicatedStorage:WaitForChild("VFX"):WaitForChild("Speed")
 
 local function performDash()
+	-- Must have katana ("Tool") equipped to dash
+	local currentTool = character:FindFirstChildWhichIsA("Tool")
+	if not currentTool or currentTool.Name ~= "Tool" then return end
+
 	local currentTime = tick()
-	-- Don't dash if already dashing OR if ultimate is active (communicated via attribute)
-	if isDashing or (currentTime - lastDashTime < DASH_COOLDOWN) or character:GetAttribute("IsUltimateActive") then return end
+	
+	-- Check charges and cooldown
+	if currentCharges <= 0 or isDashing or (currentTime - lastDashTime < DASH_COOLDOWN) or character:GetAttribute("IsUltimateActive") or character:GetAttribute("IsAttacking") then 
+		return 
+	end
+	
+	currentCharges -= 1
+	character:SetAttribute("DashCharges", currentCharges)
 	
 	isDashing = true
 	lastDashTime = currentTime
+	lastRegenTime = currentTime -- Reset regen timer on use? Or keep it ticking? Usually keep it ticking but restart if full? 
+	-- Actually, let's keep it ticking independently in the heartbeat.
 	
-	-- Determine dash direction (movement matching or facing direction)
-	local moveDirection = humanoid.MoveDirection
-	local dashDirection = moveDirection.Magnitude > 0 and moveDirection or rootPart.CFrame.LookVector
+	-- Determine dash direction (Full 3D Aim-based)
+	local mouse = player:GetMouse()
+	local targetPos = mouse.Hit.Position
+	local dashDirection = (targetPos - rootPart.Position).Unit
 	
 	-- Add LinearVelocity for the dash
 	local attachment = Instance.new("Attachment")
@@ -69,27 +65,98 @@ local function performDash()
 	linearVelocity.Attachment0 = attachment
 	linearVelocity.Parent = rootPart
 	
-	-- Trail effect
-	local ghostConnection
-	ghostConnection = RunService.RenderStepped:Connect(function()
-		if isDashing then
-			createGhostEffect()
+	-- Clone and attach the Speed VFX part
+	local speedClone = speedVFX:Clone()
+	
+	-- Create a CFrame that exactly faces the dash direction
+	local dashCFrame = CFrame.lookAt(rootPart.Position, rootPart.Position + dashDirection)
+	
+	-- Position the VFX DEAD CENTER on the player so they are inside the thickest part of the energy
+	speedClone.CFrame = dashCFrame * CFrame.new(0, 0, 0) * CFrame.Angles(math.rad(90), 0, 0)
+	speedClone.Parent = character
+	
+	-- Weld the VFX to the root part so it follows the player
+	local weld = Instance.new("WeldConstraint")
+	weld.Part0 = rootPart
+	weld.Part1 = speedClone
+	weld.Parent = speedClone
+	
+	-- INTENSE VISUALS: Player dematerializes into pure energy
+	local originalStates = {}
+	
+	for _, part in ipairs(character:GetDescendants()) do
+		if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+			originalStates[part] = { Transparency = part.Transparency }
+			part.Transparency = 1 
+		elseif part:IsA("Decal") then
+			originalStates[part] = { Transparency = part.Transparency }
+			part.Transparency = 1 
+		end
+	end
+	
+	task.spawn(function()
+		local dashHits = {}
+		local overlapParams = OverlapParams.new()
+		overlapParams.FilterDescendantsInstances = {character}
+		overlapParams.FilterType = Enum.RaycastFilterType.Exclude
+
+		local endTime = tick() + DASH_DURATION
+		while tick() < endTime and isDashing do
+			local hits = workspace:GetPartBoundsInRadius(rootPart.Position, 7.5, overlapParams)
+			for _, hit in ipairs(hits) do
+				local enemyModel = hit:FindFirstAncestorOfClass("Model")
+				if enemyModel and not dashHits[enemyModel] then
+					local enemyHumanoid = enemyModel:FindFirstChildOfClass("Humanoid")
+					if enemyHumanoid and enemyHumanoid.Health > 0 then
+						dashHits[enemyModel] = true
+						enemyHumanoid:TakeDamage(25) -- Dash Deal 25 damage
+					end
+				end
+			end
+			RunService.Heartbeat:Wait()
 		end
 	end)
-	
+
 	task.wait(DASH_DURATION)
 	
-	-- Cleanup
+	-- Cleanup and restore player
 	linearVelocity:Destroy()
 	attachment:Destroy()
-	if ghostConnection then ghostConnection:Disconnect() end
+	if speedClone then speedClone:Destroy() end
+	
+	for part, state in pairs(originalStates) do
+		if part and part.Parent then
+			part.Transparency = state.Transparency
+		end
+	end
 	
 	isDashing = false
 end
 
+-- Regen Logic
+RunService.Heartbeat:Connect(function()
+	if currentCharges < MAX_CHARGES then
+		local now = tick()
+		local elapsed = now - lastRegenTime
+		local percent = math.clamp(elapsed / CHARGE_REGEN_TIME, 0, 1)
+		
+		character:SetAttribute("DashRegenPercent", percent)
+		
+		if elapsed >= CHARGE_REGEN_TIME then
+			currentCharges += 1
+			lastRegenTime = now
+			character:SetAttribute("DashCharges", currentCharges)
+			character:SetAttribute("DashRegenPercent", 0)
+		end
+	else
+		lastRegenTime = tick()
+		character:SetAttribute("DashRegenPercent", 0)
+	end
+end)
+
 UserInputService.InputBegan:Connect(function(input, processed)
 	if processed then return end
-	if input.KeyCode == Enum.KeyCode.Q then -- Use Q for Dash
+	if input.UserInputType == Enum.UserInputType.MouseButton2 then -- Use Right Click for Dash
 		performDash()
 	end
 end)

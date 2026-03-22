@@ -24,8 +24,15 @@ local rootJointC0 = rootJoint.C0
 
 -- Animation setup
 local walkAnim = Instance.new("Animation")
-walkAnim.AnimationId = "rbxassetid://913376220"
+walkAnim.AnimationId = "rbxassetid://73649051439627"
 local walkTrack = humanoid:LoadAnimation(walkAnim)
+walkTrack.Priority = Enum.AnimationPriority.Action2
+
+local idleAnim = Instance.new("Animation")
+idleAnim.AnimationId = "rbxassetid://113340815496069"
+local idleTrack = humanoid:LoadAnimation(idleAnim)
+idleTrack.Priority = Enum.AnimationPriority.Action2
+idleTrack.Looped = true
 
 -- Disable AutoRotate
 humanoid.AutoRotate = false
@@ -72,26 +79,54 @@ RunService.RenderStepped:Connect(function()
 
 	local tiltAngle = math.asin(camera.CFrame.LookVector.Y)
 
+	local isAiming = character:GetAttribute("IsAiming")
+
 	if isR15 then
 		rootJoint.C0 = rootJointC0 * CFrame.Angles(0, relativeAngle, 0)
-		waist.C0 = waistC0 * CFrame.Angles(tiltAngle * 0.5, -relativeAngle, 0)
-		neck.C0 = neckC0 * CFrame.Angles(tiltAngle * 0.5, 0, 0)
+		-- Skip upper-body joint overrides when dual-gun aim is active
+		if not isAiming then
+			waist.C0 = waistC0 * CFrame.Angles(tiltAngle * 0.5, -relativeAngle, 0)
+			neck.C0 = neckC0 * CFrame.Angles(tiltAngle * 0.5, 0, 0)
+		end
 	else
 		rootJoint.C0 = rootJointC0 * CFrame.Angles(0, 0, relativeAngle)
-		neck.C0 = neckC0 * CFrame.Angles(tiltAngle, -relativeAngle, 0)
+		if not isAiming then
+			neck.C0 = neckC0 * CFrame.Angles(tiltAngle, -relativeAngle, 0)
+		end
 	end
 
-	-- Backwards animation
-	if isBackward then
+	local hasSword = character:FindFirstChildWhichIsA("Tool")
+	
+	-- Backwards animation (Only if NOT holding a sword)
+	if isBackward and not hasSword then
 		if not walkTrack.IsPlaying then
 			walkTrack:Play()
 		end
-
-		walkTrack:AdjustSpeed(-1)
+		walkTrack:AdjustSpeed(-1.5)
 	else
 		if walkTrack.IsPlaying then
 			walkTrack:Stop()
 		end
 	end
 
+	-- Global Idle (Plays whenever stationary, but NOT while aiming with guns)
+	if isAiming then
+		if idleTrack.IsPlaying then
+			idleTrack:Stop(0.2)
+		end
+	elseif moveDirection.Magnitude < 0.1 then
+		if not idleTrack.IsPlaying then
+			idleTrack:Play(0.5)
+		end
+	else
+		if idleTrack.IsPlaying then
+			idleTrack:Stop(0.5)
+		end
+	end
+
+	-- Custom footstep speed (half speed)
+	local running = hrp:FindFirstChild("Running")
+	if running and running:IsA("Sound") then
+		running.PlaybackSpeed = (humanoid.WalkSpeed / 16) * 0.75
+	end
 end)

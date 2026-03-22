@@ -12,6 +12,7 @@ UserInputService.MouseIconEnabled = false
 local gui = Instance.new("ScreenGui")
 gui.Name = "CustomCursor"
 gui.ResetOnSpawn = false
+gui.IgnoreGuiInset = true -- Fixes the 36-pixel topbar offset!
 gui.Parent = playerGui
 
 local cursor = Instance.new("TextLabel")
