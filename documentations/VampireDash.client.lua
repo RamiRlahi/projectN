@@ -109,8 +109,50 @@ local function performDash()
 	linearVelocity.Parent = rootPart
 
 	-------------------------------------------------
-	-- 2. BAT SWARM VFX (replaces the character visually)
+	-- 2. BAT SWARM + BLOOD TRAIL (start both at the same time)
 	-------------------------------------------------
+
+	-- Blood trail: connect FIRST so it fires on the very next frame
+	local trailConnection
+	trailConnection = RunService.RenderStepped:Connect(function()
+		if not isDashing then return end
+
+		local bloodDrop = bloodTrailVFX:Clone()
+
+		-- Position the blood VFX at the player's feet
+		local dropCFrame = rootPart.CFrame * CFrame.new(0, -2, 0)
+
+		-- Blood-01 is a Model, so we need to handle it differently
+		if bloodDrop:IsA("Model") then
+			local primaryPart = bloodDrop.PrimaryPart or bloodDrop:FindFirstChildWhichIsA("BasePart")
+			if primaryPart then
+				bloodDrop:PivotTo(dropCFrame)
+			end
+
+			for _, part in bloodDrop:GetDescendants() do
+				if part:IsA("BasePart") then
+					part.Anchored = true
+					part.CanCollide = false
+				end
+			end
+		else
+			bloodDrop.CFrame = dropCFrame
+			bloodDrop.Anchored = true
+			bloodDrop.CanCollide = false
+		end
+
+		bloodDrop.Parent = workspace
+
+		for _, emitter in bloodDrop:GetDescendants() do
+			if emitter:IsA("ParticleEmitter") then
+				emitter.Enabled = true
+			end
+		end
+
+		Debris:AddItem(bloodDrop, BLOOD_DROP_LIFETIME)
+	end)
+
+	-- Bat swarm VFX
 	local batClone = batSwarmVFX:Clone()
 	local dashCFrame = CFrame.lookAt(rootPart.Position, rootPart.Position + dashDirection)
 	batClone.CFrame = dashCFrame
@@ -128,11 +170,7 @@ local function performDash()
 			emitter.Enabled = true
 			
 			-- 🩸 DEADLOCK STYLE BURST: Big circle that closes in
-			-- We forcefully emit a huge wave of bats instantly at start
 			local originalSize = emitter.Size
-			
-			-- If the emitter uses a NumberSequence for size, we can't easily multiply it,
-			-- but we can emit a high count to make the cloud massive.
 			emitter:Emit(100)  -- Shoots out 100 extra bats instantly!
 			
 			-- Temporarily increase speed so they spread out into a wide circle fast
@@ -141,7 +179,6 @@ local function performDash()
 			
 			task.delay(0.1, function()
 				if emitter.Parent then
-					-- Pull them back/slow them down for the "closing in" feel
 					emitter.Speed = originalSpeed
 				end
 			end)
@@ -163,41 +200,6 @@ local function performDash()
 		elseif part:IsA("Decal") and not part:IsDescendantOf(batClone) then
 			originalStates[part] = { Transparency = part.Transparency }
 			part.Transparency = 1
-		end
-	end
-
-	-------------------------------------------------
-	-- 4. BLOOD TRAIL (attached to the player alongside the bats)
-	-------------------------------------------------
-	local bloodClone = bloodTrailVFX:Clone()
-
-	-- Position the blood VFX at the player's feet
-	local dropCFrame = rootPart.CFrame * CFrame.new(0, -2, 0)
-	local bloodTargetPart = bloodClone
-
-	if bloodClone:IsA("Model") then
-		bloodTargetPart = bloodClone.PrimaryPart or bloodClone:FindFirstChildWhichIsA("BasePart")
-		if bloodTargetPart then
-			bloodClone:PivotTo(dropCFrame)
-		end
-	else
-		bloodClone.CFrame = dropCFrame
-	end
-
-	bloodClone.Parent = character
-
-	-- Weld it so it follows the player just like the bats
-	if bloodTargetPart then
-		local bloodWeld = Instance.new("WeldConstraint")
-		bloodWeld.Part0 = rootPart
-		bloodWeld.Part1 = bloodTargetPart
-		bloodWeld.Parent = bloodTargetPart
-	end
-
-	-- Enable particles inside the blood drop
-	for _, emitter in bloodClone:GetDescendants() do
-		if emitter:IsA("ParticleEmitter") or emitter:IsA("Beam") then
-			emitter.Enabled = true
 		end
 	end
 
@@ -238,9 +240,9 @@ local function performDash()
 	linearVelocity:Destroy()
 	attachment:Destroy()
 
-	-- Remove blood trail
-	if bloodClone and bloodClone.Parent then
-		bloodClone:Destroy()
+	-- Disconnect blood trail spawner
+	if trailConnection then
+		trailConnection:Disconnect()
 	end
 
 	-- Remove bat VFX
