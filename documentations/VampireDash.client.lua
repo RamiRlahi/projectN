@@ -6,9 +6,9 @@
 	Press X to dash as a bat swarm with blood trail.
 	
 	VFX Setup:
-	  Put your two VFX parts inside ReplicatedStorage > VFX:
+	  Put your two VFX inside ReplicatedStorage > VFX:
 	    • ReplicatedStorage > VFX > BatSwarm    (the bat transformation effect)
-	    • ReplicatedStorage > VFX > BloodTrail   (the blood trail effect)
+	    • ReplicatedStorage > VFX > Blood-01    (the blood trail model: Main + Blood1)
 ]]
 
 local Players            = game:GetService("Players")
@@ -41,9 +41,9 @@ local BLOOD_DROP_LIFETIME = 1.5       -- how long each blood drop stays
 -------------------------------------------------
 -- VFX REFERENCES
 -------------------------------------------------
-local vfxFolder    = ReplicatedStorage:WaitForChild("VFX")
-local batSwarmVFX  = vfxFolder:WaitForChild("BatSwarm")    -- your bat transformation part/model
-local bloodTrailVFX = vfxFolder:WaitForChild("BloodTrail") -- your blood trail part/model
+local vfxFolder     = ReplicatedStorage:WaitForChild("VFX")
+local batSwarmVFX   = vfxFolder:WaitForChild("BatSwarm")   -- your bat transformation part/model
+local bloodTrailVFX = vfxFolder:WaitForChild("Blood-01")   -- your blood trail model (Main + Blood1)
 
 -------------------------------------------------
 -- STATE
@@ -167,28 +167,39 @@ local function performDash()
 	end
 
 	-------------------------------------------------
-	-- 4. BLOOD TRAIL (drops blood VFX behind the player)
+	-- 4. BLOOD TRAIL (attached to the player alongside the bats)
 	-------------------------------------------------
-	local trailConnection
-	trailConnection = RunService.RenderStepped:Connect(function()
-		if not isDashing then return end
+	local bloodClone = bloodTrailVFX:Clone()
 
-		local bloodDrop = bloodTrailVFX:Clone()
-		bloodDrop.CFrame = rootPart.CFrame * CFrame.new(0, -2, 0) -- slightly below feet
-		bloodDrop.Anchored = true
-		bloodDrop.CanCollide = false
-		bloodDrop.Parent = workspace
+	-- Position the blood VFX at the player's feet
+	local dropCFrame = rootPart.CFrame * CFrame.new(0, -2, 0)
+	local bloodTargetPart = bloodClone
 
-		-- Enable particles inside the blood drop
-		for _, emitter in bloodDrop:GetDescendants() do
-			if emitter:IsA("ParticleEmitter") then
-				emitter.Enabled = true
-			end
+	if bloodClone:IsA("Model") then
+		bloodTargetPart = bloodClone.PrimaryPart or bloodClone:FindFirstChildWhichIsA("BasePart")
+		if bloodTargetPart then
+			bloodClone:PivotTo(dropCFrame)
 		end
+	else
+		bloodClone.CFrame = dropCFrame
+	end
 
-		-- Auto-cleanup after a moment
-		Debris:AddItem(bloodDrop, BLOOD_DROP_LIFETIME)
-	end)
+	bloodClone.Parent = character
+
+	-- Weld it so it follows the player just like the bats
+	if bloodTargetPart then
+		local bloodWeld = Instance.new("WeldConstraint")
+		bloodWeld.Part0 = rootPart
+		bloodWeld.Part1 = bloodTargetPart
+		bloodWeld.Parent = bloodTargetPart
+	end
+
+	-- Enable particles inside the blood drop
+	for _, emitter in bloodClone:GetDescendants() do
+		if emitter:IsA("ParticleEmitter") or emitter:IsA("Beam") then
+			emitter.Enabled = true
+		end
+	end
 
 	-------------------------------------------------
 	-- 5. DAMAGE ENEMIES DURING DASH
@@ -227,9 +238,9 @@ local function performDash()
 	linearVelocity:Destroy()
 	attachment:Destroy()
 
-	-- Disconnect blood trail spawner
-	if trailConnection then
-		trailConnection:Disconnect()
+	-- Remove blood trail
+	if bloodClone and bloodClone.Parent then
+		bloodClone:Destroy()
 	end
 
 	-- Remove bat VFX
