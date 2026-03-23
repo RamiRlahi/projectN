@@ -330,12 +330,12 @@ local ULT_RADIUS         = 15       -- damage radius in studs
 local ULT_HEAL_PER_HIT   = 15       -- HP healed per enemy hit
 local ULT_COOLDOWN       = 2        -- ⚠️ IMPORTANT: Must match ULTIMATE_COOLDOWN in GunLogic!
 
-local CIRCLE_SCALE       = 0.2      -- ← resize the circle (0.5 = half, 1 = original, 2 = double)
+local CIRCLE_SCALE       = 0.7      -- ← resize the circle (0.5 = half, 1 = original, 2 = double)
 local CIRCLE_GROW_TIME   = 0.3      -- seconds for the circle to grow from nothing
-local CIRCLE_ROTATION    = CFrame.Angles(math.rad(-90), 0, 0)  -- lies FLAT on the ground
+local CIRCLE_ROTATION    = CFrame.Angles(math.rad(0), math.rad(90), math.rad(0))  -- lies FLAT on the ground
 
-local MOUTH_SCALE        = 0.18      -- ← resize the dog mouth
-local MOUTH_RISE_HEIGHT  = 15       -- how far the mouth starts below ground (studs)
+local MOUTH_SCALE        = 0.34     -- ← resize the dog mouth
+local MOUTH_RISE_HEIGHT  = 100      -- how far the mouth starts below ground (studs)
 local MOUTH_RISE_TIME    = 0.35     -- seconds for the mouth to rise up
 local MOUTH_SNAP_TIME    = 0.15     -- seconds for the snap
 local MOUTH_SNAP_SHRINK  = 0.7     -- how much it squishes on snap (0.7 = 70% of original — try 0.5 for more dramatic)
