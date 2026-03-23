@@ -332,10 +332,12 @@ local ULT_COOLDOWN       = 2        -- ⚠️ IMPORTANT: Must match ULTIMATE_COO
 
 local CIRCLE_SCALE       = 0.7      -- ← resize the circle (0.5 = half, 1 = original, 2 = double)
 local CIRCLE_GROW_TIME   = 0.3      -- seconds for the circle to grow from nothing
-local CIRCLE_ROTATION    = CFrame.Angles(math.rad(0), math.rad(90), math.rad(0))  -- lies FLAT on the ground
+local CIRCLE_ROTATION    = CFrame.Angles(math.rad(0), math.rad(0), math.rad(-90))  -- lies FLAT on the ground
 
 local MOUTH_SCALE        = 0.34     -- ← resize the dog mouth
 local MOUTH_RISE_HEIGHT  = 100      -- how far the mouth starts below ground (studs)
+local MOUTH_END_HEIGHT   = 6        -- ← CHANGE THIS: how high above ground the mouth ends up (try 4-8)
+local MOUTH_OFFSET       = Vector3.new(0, 0, 0)  -- ← NUDGE the mouth: (Right/Left, Up/Down, Forward/Back)
 local MOUTH_RISE_TIME    = 0.35     -- seconds for the mouth to rise up
 local MOUTH_SNAP_TIME    = 0.15     -- seconds for the snap
 local MOUTH_SNAP_SHRINK  = 0.7     -- how much it squishes on snap (0.7 = 70% of original — try 0.5 for more dramatic)
@@ -412,9 +414,9 @@ ultimateEvent.OnServerEvent:Connect(function(firingPlayer, targetPos)
 
 	local mouth = mouthDogVFX:Clone()
 
-	-- Start the mouth BELOW the ground (rises up through the circle)
-	local startPos = groundPos + Vector3.new(0, -MOUTH_RISE_HEIGHT, 0)
-	local endPos   = groundPos + Vector3.new(0, 4, 0)  -- rises above the sigil
+	-- Start the mouth BELOW the ground, end at MOUTH_END_HEIGHT above center
+	local startPos = groundPos + MOUTH_OFFSET + Vector3.new(0, -MOUTH_RISE_HEIGHT, 0)
+	local endPos   = groundPos + MOUTH_OFFSET + Vector3.new(0, MOUTH_END_HEIGHT, 0)
 
 	if mouth:IsA("Model") then
 		mouth:ScaleTo(MOUTH_SCALE)
