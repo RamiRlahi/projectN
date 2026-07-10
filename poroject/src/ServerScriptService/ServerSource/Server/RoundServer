@@ -1,0 +1,9 @@
+local Players = game:GetService("Players")
+local ServerScriptService = game:GetService("ServerScriptService")
+
+local Round = require(ServerScriptService.Modules.Round)
+local newRound = Round.new()
+
+Players.PlayerAdded:Connect(function()
+	newRound:Initiate()
+end)
