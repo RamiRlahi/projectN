@@ -1,0 +1,73 @@
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TeleportService = game:GetService("TeleportService")
+
+local MAIN_MAP_PLACE_ID = 80003923903959
+
+local remotes = ReplicatedStorage:WaitForChild("Remotes")
+local openClassUI = remotes:WaitForChild("OpenClassUI")
+local chooseClass = remotes:WaitForChild("ChooseClass")
+local startGame = remotes:WaitForChild("StartGame")
+
+local classSelectZone = workspace:WaitForChild("ClassSelectZone")
+
+local validClasses = {
+	SwordMain = true,
+	Time = true,
+	Vampire = true,
+}
+
+local debounce = {}
+
+local function getPlayer(hit)
+	local character = hit.Parent
+	if not character then return nil end
+
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then return nil end
+
+	return Players:GetPlayerFromCharacter(character)
+end
+
+classSelectZone.Touched:Connect(function(hit)
+	local player = getPlayer(hit)
+	if not player then return end
+	if debounce[player] then return end
+
+	debounce[player] = true
+	openClassUI:FireClient(player)
+
+	task.delay(2, function()
+		debounce[player] = nil
+	end)
+end)
+
+chooseClass.OnServerEvent:Connect(function(player, className)
+	if not validClasses[className] then
+		warn("Invalid class:", className)
+		return
+	end
+
+	player:SetAttribute("Class", className)
+	print(player.Name .. " chose " .. className)
+end)
+
+startGame.OnServerEvent:Connect(function(player)
+	local chosenClass = player:GetAttribute("Class")
+
+	if not chosenClass then
+		warn(player.Name .. " tried to start without class")
+		return
+	end
+
+	local options = Instance.new("TeleportOptions")
+	options:SetTeleportData({
+		Class = chosenClass
+	})
+
+	TeleportService:TeleportAsync(MAIN_MAP_PLACE_ID, {player}, options)
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+	debounce[player] = nil
+end)
