@@ -1,0 +1,87 @@
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local statusRemoteEvent = ReplicatedStorage.Remotes.StatusRemoteEvent
+local timerRemoteEvent = ReplicatedStorage.Remotes.TimerRemoteEvent
+
+local Round = {}
+Round.__index = Round
+
+function Round.new()
+	local self = setmetatable({}, Round)
+	self.IntermissionTime = 15
+	self.GraceTime = 15
+	self.RoundTime = 60
+	self.IsRound = false
+	self.Status = ""
+	self.Timer = 0
+	return self
+end
+
+function Round:EnoughPlayers()
+	self.Status = "Not enough players"
+	statusRemoteEvent:FireAllClients(self.Status)
+	return #Players:GetPlayers() >= 1
+end
+
+function Round:Intermission()
+	self.Status = "Intermission"
+	statusRemoteEvent:FireAllClients(self.Status)
+	for index = self.IntermissionTime, 0, -1 do
+		self.Timer = index
+		timerRemoteEvent:FireAllClients(self.Timer)
+		task.wait(1)
+	end
+end
+
+function Round:BringPlayers()
+	self.IsRound = true
+	self.Status = "Bringing players..."
+	statusRemoteEvent:FireAllClients(self.Status)
+	for index, player in Players:GetPlayers() do
+		local character = player.Character
+		if character and character:FindFirstChild("HumanoidRootPart") then
+			local randomNumberX = math.random(-100, 100)
+			local randomNumberZ = math.random(-100, 100)
+			character:SetPrimaryPartCFrame(CFrame.new(randomNumberX, 0, randomNumberZ))
+		end
+	end
+	task.wait(1)
+end	
+
+function Round:GracePeriod()
+	self.Status = "Grace"
+	statusRemoteEvent:FireAllClients(self.Status)
+	for index = self.GraceTime, 0, -1 do
+		self.Timer = index
+		timerRemoteEvent:FireAllClients(self.Timer)
+		task.wait(1)
+	end
+end
+
+function Round:Start()
+	self.Status = "Round"
+	statusRemoteEvent:FireAllClients(self.Status)
+	for index = self.RoundTime, 0, -1 do
+		self.Timer = index
+		timerRemoteEvent:FireAllClients(self.Timer)
+		task.wait(1)
+	end
+	self.IsRound = false
+end
+
+function Round:Initiate()
+	while true do
+		if not self:EnoughPlayers() then
+			task.wait(1)
+		else 
+			self:Intermission()
+			self:BringPlayers()
+			self:GracePeriod()
+			self:Start()
+		end
+
+	end
+end
+
+return Round
