@@ -1,0 +1,21 @@
+{
+  "name": "poroject",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "$path": "src/ReplicatedStorage",
+      "$ignoreUnknownInstances": true,
+      "$className": "ReplicatedStorage"
+    },
+    "ServerScriptService": {
+      "$path": "src/ServerScriptService",
+      "$ignoreUnknownInstances": true,
+      "$className": "ServerScriptService"
+    },
+    "StarterPlayer": {
+      "$path": "src/StarterPlayer",
+      "$ignoreUnknownInstances": true,
+      "$className": "StarterPlayer"
+    }
+  }
+}
