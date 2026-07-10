@@ -1,334 +1,394 @@
--- 3D SKILL GUI SYSTEM - V2 PREMIUM
-local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
-local TweenService = game:GetService("TweenService")
+-- 3D SKILL GUI SYSTEM - V4 SCREEN GUI CIRCLE STYLE
+-- Skills: bottom-center, large white circles with dark icon silhouettes
+-- Keybind box above, name label below, charge badge top-right
+-- Uses ScreenGui (not SurfaceGui) for reliable positioning & sizing
 
--- 1. Setup Player & GUI
-local plr = Players.LocalPlayer
+local Players          = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService       = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService     = game:GetService("TweenService")
+
+local plr       = Players.LocalPlayer
 local playerGui = plr:WaitForChild("PlayerGui")
 
--- Cleanup old frames
+-- Remove leftover 3d parts from older versions
 for _, child in ipairs(workspace:GetChildren()) do
-	if child.Name == "3d ui frame" then
-		child:Destroy()
-	end
+	if child.Name == "3d ui frame" then child:Destroy() end
+end
+-- Remove leftover SurfaceGui
+for _, g in ipairs(playerGui:GetChildren()) do
+	if g.Name == "SkillSurfaceGUI" then g:Destroy() end
 end
 
--- Cooldown Manager integration
+-- Cooldown Manager integration (optional)
 local CooldownManager = nil
 local managerObj = ReplicatedStorage:FindFirstChild("CooldownManager")
 if managerObj then
 	pcall(function() CooldownManager = require(managerObj) end)
 end
 
--- ============================================
--- STEP 1: Creating the Part
--- ============================================
-local frame = Instance.new("Part")
-frame.Size = Vector3.new(10, 4, 0.1) 
-frame.CanCollide = false
-frame.CanQuery = false
-frame.CanTouch = false
-frame.CastShadow = false
-frame.Massless = true
-frame.Transparency = 1 
-frame.Name = "3d ui frame"
-frame.Anchored = true
-frame.Parent = workspace
+-- ============================================================
+-- SCREEN GUI ROOT
+-- ============================================================
+-- Remove any old version
+local oldGui = playerGui:FindFirstChild("SkillHUD")
+if oldGui then oldGui:Destroy() end
 
--- ============================================
--- STEP 2: Creating Surface GUI
--- ============================================
-local surface = Instance.new("SurfaceGui")
-surface.Adornee = frame
-surface.Face = Enum.NormalId.Back
-surface.PixelsPerStud = 200 -- High enough for clarity, low enough to avoid points bug
-surface.ClipsDescendants = false
-surface.AlwaysOnTop = true
-surface.ResetOnSpawn = false
-surface.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
-surface.Name = "SkillSurfaceGUI"
-surface.Parent = playerGui
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name           = "SkillHUD"
+screenGui.ResetOnSpawn   = false
+screenGui.IgnoreGuiInset = true
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Parent         = playerGui
 
--- ============================================
--- UI Design
--- ============================================
-local mainContainer = Instance.new("Frame")
-mainContainer.Name = "SkillContainer"
-mainContainer.Size = UDim2.new(1, 0, 1, 0)
-mainContainer.BackgroundTransparency = 1
-mainContainer.Parent = surface
-
-local skillLayout = Instance.new("UIListLayout")
-skillLayout.Name = "SkillLayout"
-skillLayout.FillDirection = Enum.FillDirection.Horizontal
-skillLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-skillLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-skillLayout.Padding = UDim.new(0, 100) 
-skillLayout.Parent = mainContainer
-
--- SKILL LIST
+-- ============================================================
+-- SKILL DATA
+-- ============================================================
 local skillsData = {
-	{key = "M2", name = "Dash", isUltimate = false, hasCharges = true},
-	{key = "E", name = "Phase", isUltimate = false},
-	{key = "F", name = "Slash", isUltimate = false},
-	{key = "Q", name = "Ultimate", isUltimate = true},
+	{key = "M2", name = "Dash",     isUltimate = false, hasCharges = true},
+	{key = "E",  name = "Phase",    isUltimate = false},
+	{key = "F",  name = "Slash",    isUltimate = false},
+	{key = "Q",  name = "Ultimate", isUltimate = true},
 }
 
+-- ============================================================
+-- LAYOUT CONTAINER  (centered at bottom of screen)
+-- ============================================================
+local CIRCLE_NORMAL = 80        -- px: normal skill circle diameter
+local CIRCLE_ULT    = 100       -- px: ultimate circle diameter
+local GAP           = 18        -- px: gap between slots
+local KEYBIND_H     = 42        -- px: keybind box height
+local LABEL_H       = 24        -- px: name label height
+local SLOT_W_NORMAL = CIRCLE_NORMAL + 16
+local SLOT_W_ULT    = CIRCLE_ULT    + 16
+
+-- Total bar width
+local totalW = (SLOT_W_NORMAL * 3) + SLOT_W_ULT + GAP * 3
+
+local skillBar = Instance.new("Frame")
+skillBar.Name                    = "SkillBar"
+skillBar.Size                    = UDim2.new(0, totalW, 0, KEYBIND_H + CIRCLE_ULT + LABEL_H + 14)
+skillBar.AnchorPoint             = Vector2.new(0.5, 1)
+skillBar.Position                = UDim2.new(0.5, 0, 1, -24)
+skillBar.BackgroundTransparency  = 1
+skillBar.Parent                  = screenGui
+
+local barLayout = Instance.new("UIListLayout")
+barLayout.FillDirection          = Enum.FillDirection.Horizontal
+barLayout.HorizontalAlignment    = Enum.HorizontalAlignment.Center
+barLayout.VerticalAlignment      = Enum.VerticalAlignment.Bottom
+barLayout.Padding                = UDim.new(0, GAP)
+barLayout.Parent                 = skillBar
+
+-- ============================================================
+-- BUILD ONE SKILL SLOT
+-- ============================================================
 local skillFrames = {}
-local SF = 1.0 -- Balanced scale factor for the 200 PixelsPerStud
 
-for i, skillData in ipairs(skillsData) do
-	local skillContainer = Instance.new("Frame")
-	skillContainer.Name = "Skill_" .. skillData.key
-	skillContainer.Size = UDim2.new(0, 140 * SF, 0, 240 * SF)
-	skillContainer.BackgroundTransparency = 1
-	skillContainer.Parent = mainContainer
-	
-	-- 1. Keybind Box (Matching image: semi-transparent white/black balance)
+local function buildSkillSlot(skillData)
+	local isUlt    = skillData.isUltimate
+	local circleD  = isUlt and CIRCLE_ULT or CIRCLE_NORMAL
+	local slotW    = circleD + 16
+
+	-- Wrapper (vertical stack: keybind / circle / name)
+	local slot = Instance.new("Frame")
+	slot.Name                   = "Skill_" .. skillData.key
+	slot.Size                   = UDim2.new(0, slotW, 1, 0)
+	slot.BackgroundTransparency = 1
+	slot.Parent                 = skillBar
+
+	-- ── Keybind box ──
+	local kbSize = math.min(circleD * 0.52, 44)
+
 	local keybindBox = Instance.new("Frame")
-	keybindBox.Size = UDim2.new(0, 55 * SF, 0, 55 * SF)
-	keybindBox.Position = UDim2.new(0.5, -27.5 * SF, 0, 0)
-	keybindBox.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-	keybindBox.BackgroundTransparency = 0.5
-	keybindBox.Parent = skillContainer
-	
-	local keybindStroke = Instance.new("UIStroke")
-	keybindStroke.Color = Color3.new(1, 1, 1)
-	keybindStroke.Thickness = 3 * SF
-	keybindStroke.Parent = keybindBox
-	
-	local keybindCorner = Instance.new("UICorner")
-	keybindCorner.CornerRadius = UDim.new(0, 10 * SF)
-	keybindCorner.Parent = keybindBox
-	
+	keybindBox.Name                  = "KeyBind"
+	keybindBox.Size                  = UDim2.new(0, kbSize, 0, kbSize * 0.85)
+	keybindBox.AnchorPoint           = Vector2.new(0.5, 0)
+	keybindBox.Position              = UDim2.new(0.5, 0, 0, 0)
+	keybindBox.BackgroundColor3      = Color3.fromRGB(0, 0, 0)
+	keybindBox.BackgroundTransparency = 0.42
+	keybindBox.BorderSizePixel       = 0
+	keybindBox.Parent                = slot
+
+	local kbCorner = Instance.new("UICorner")
+	kbCorner.CornerRadius = UDim.new(0, 7)
+	kbCorner.Parent       = keybindBox
+
+	local kbStroke = Instance.new("UIStroke")
+	kbStroke.Color       = Color3.fromRGB(255, 255, 255)
+	kbStroke.Thickness   = 2
+	kbStroke.Transparency = 0.25
+	kbStroke.Parent      = keybindBox
+
 	local keyLabel = Instance.new("TextLabel")
-	keyLabel.Size = UDim2.new(1, 0, 1, 0)
+	keyLabel.Size                 = UDim2.new(1, 0, 1, 0)
 	keyLabel.BackgroundTransparency = 1
-	keyLabel.Text = skillData.key
-	keyLabel.TextColor3 = Color3.new(1, 1, 1)
-	keyLabel.TextScaled = true
-	keyLabel.Font = Enum.Font.GothamBold
-	keyLabel.Parent = keybindBox
-    
-    local padding = Instance.new("UIPadding")
-    padding.PaddingTop = UDim.new(0.2, 0)
-    padding.PaddingBottom = UDim.new(0.2, 0)
-    padding.Parent = keyLabel
+	keyLabel.Text                 = skillData.key
+	keyLabel.TextColor3           = Color3.fromRGB(255, 255, 255)
+	keyLabel.TextScaled           = true
+	keyLabel.Font                 = Enum.Font.GothamBold
+	keyLabel.Parent               = keybindBox
 
-	-- 2. Card Visual (Tilted & Stylized)
-	local cardSize = UDim2.new(0, 110 * SF, 0, 110 * SF)
-	local cardPos = UDim2.new(0.5, -55 * SF, 0, 75 * SF)
-	
-	if skillData.isUltimate then
-		cardSize = UDim2.new(0, 140 * SF, 0, 140 * SF)
-		cardPos = UDim2.new(0.5, -70 * SF, 0, 75 * SF)
-	end
-	
-	-- Shadow (Deeper shadow)
-	local cardShadow = Instance.new("Frame")
-	cardShadow.Size = cardSize
-	cardShadow.Position = cardPos + UDim2.new(0, 8 * SF, 0, 8 * SF)
-	cardShadow.BackgroundColor3 = Color3.new(0, 0, 0)
-	cardShadow.BackgroundTransparency = 0.4
-	cardShadow.Rotation = 5
-	cardShadow.BorderSizePixel = 0
-	cardShadow.Parent = skillContainer
-	
-	-- Main Card (Glassmorphism look)
-	local cardMain = Instance.new("Frame")
-	cardMain.Size = cardSize
-	cardMain.Position = cardPos
-	cardMain.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-	cardMain.BackgroundTransparency = 0.3
-	cardMain.ClipsDescendants = true
-	cardMain.Rotation = 5
-	cardMain.BorderSizePixel = 0
-	cardMain.Parent = skillContainer
-	
-	local cardStroke = Instance.new("UIStroke")
-	cardStroke.Color = Color3.new(1, 1, 1)
-	cardStroke.Thickness = 2 * SF
-	cardStroke.Parent = cardMain
-	
-	-- Cooldown Overlay (The White Fill)
-	local fillFrame = Instance.new("Frame")
-	fillFrame.Name = "CooldownOverlay"
-	fillFrame.Size = UDim2.new(1, 0, 1, 0)
-	fillFrame.Position = UDim2.new(0, 0, 0, 0)
-	fillFrame.BackgroundColor3 = Color3.new(1, 1, 1)
-	fillFrame.BackgroundTransparency = 0.3 -- Better visibility for fill
-	fillFrame.BorderSizePixel = 0
-	fillFrame.ZIndex = 2
-	fillFrame.Parent = cardMain
+	local kbPad = Instance.new("UIPadding")
+	kbPad.PaddingTop    = UDim.new(0.12, 0)
+	kbPad.PaddingBottom = UDim.new(0.12, 0)
+	kbPad.PaddingLeft   = UDim.new(0.08, 0)
+	kbPad.PaddingRight  = UDim.new(0.08, 0)
+	kbPad.Parent        = keyLabel
 
-    -- Icon (Correct corner icon)
-    local icon = Instance.new("ImageLabel")
-    icon.Size = UDim2.new(0, 35 * SF, 0, 35 * SF)
-    icon.Position = UDim2.new(1, -35 * SF, 1, -35 * SF)
-    icon.BackgroundTransparency = 1
-    icon.Image = "rbxassetid://10650942544" 
-    icon.ImageColor3 = Color3.new(0, 0, 0)
-    icon.ZIndex = 3
-    icon.Parent = cardMain
+	-- ── Main circle ──
+	local circle = Instance.new("Frame")
+	circle.Name                  = "Circle"
+	circle.Size                  = UDim2.new(0, circleD, 0, circleD)
+	circle.AnchorPoint           = Vector2.new(0.5, 0)
+	circle.Position              = UDim2.new(0.5, 0, 0, kbSize * 0.85 + 6)
+	circle.BackgroundColor3      = Color3.fromRGB(255, 255, 255)
+	circle.BackgroundTransparency = isUlt and 0.0 or 0.06
+	circle.BorderSizePixel       = 0
+	circle.ClipsDescendants      = false
+	circle.Parent                = slot
 
-	-- Ultimate Text (Percentage/READY)
-	local chargeTextLabel = nil
-	if skillData.isUltimate then
-		chargeTextLabel = Instance.new("TextLabel")
-		chargeTextLabel.Size = UDim2.new(1, 0, 1, 0)
-		chargeTextLabel.BackgroundTransparency = 1
-		chargeTextLabel.Text = "READY"
-		chargeTextLabel.TextColor3 = Color3.new(1, 1, 1)
-		chargeTextLabel.TextScaled = true
-		chargeTextLabel.Font = Enum.Font.PermanentMarker
-		chargeTextLabel.Rotation = -10
-		chargeTextLabel.ZIndex = 5
-		chargeTextLabel.Parent = cardMain
-		
-		local textStroke = Instance.new("UIStroke")
-		textStroke.Thickness = 3 * SF
-		textStroke.Color = Color3.new(0, 0, 0)
-		textStroke.Parent = chargeTextLabel
+	local circleCorner = Instance.new("UICorner")
+	circleCorner.CornerRadius = UDim.new(1, 0)
+	circleCorner.Parent       = circle
+
+	local circleStroke = Instance.new("UIStroke")
+	circleStroke.Color       = Color3.fromRGB(255, 255, 255)
+	circleStroke.Thickness   = isUlt and 3.5 or 2.5
+	circleStroke.Transparency = 0.08
+	circleStroke.Parent      = circle
+
+	-- Glow behind circle (ultimate only)
+	if isUlt then
+		local glow = Instance.new("ImageLabel")
+		glow.Name                  = "UltGlow"
+		glow.Size                  = UDim2.new(0, circleD * 1.7, 0, circleD * 1.7)
+		glow.AnchorPoint           = Vector2.new(0.5, 0.5)
+		glow.Position              = UDim2.new(0.5, 0, 0.5, 0)
+		glow.BackgroundTransparency = 1
+		glow.Image                 = "rbxassetid://5028857084"   -- radial glow
+		glow.ImageColor3           = Color3.fromRGB(255, 220, 60)
+		glow.ImageTransparency     = 0.62
+		glow.ZIndex                = 0
+		glow.Parent                = circle
 	end
 
-	-- 2.5 Skill Name Label (THE BOLD WORDS)
+	-- Icon (dark silhouette inside circle)
+	local icon = Instance.new("ImageLabel")
+	icon.Name                 = "Icon"
+	icon.Size                 = UDim2.new(0, circleD * 0.54, 0, circleD * 0.54)
+	icon.AnchorPoint          = Vector2.new(0.5, 0.5)
+	icon.Position             = UDim2.new(0.5, 0, 0.5, 0)
+	icon.BackgroundTransparency = 1
+	icon.Image                = "rbxassetid://10650942544"
+	icon.ImageColor3          = Color3.fromRGB(20, 20, 20)
+	icon.ScaleType            = Enum.ScaleType.Fit
+	icon.ZIndex               = 2
+	icon.Parent               = circle
+
+	-- Cooldown overlay (dark fill from top, recedes as cooldown expires)
+	local cooldownOverlay = Instance.new("Frame")
+	cooldownOverlay.Name              = "CooldownOverlay"
+	cooldownOverlay.Size              = UDim2.new(1, 0, 0, 0)   -- height = 0 when ready
+	cooldownOverlay.Position          = UDim2.new(0, 0, 0, 0)
+	cooldownOverlay.BackgroundColor3  = Color3.fromRGB(0, 0, 0)
+	cooldownOverlay.BackgroundTransparency = 0.3
+	cooldownOverlay.BorderSizePixel   = 0
+	cooldownOverlay.ZIndex            = 3
+	cooldownOverlay.ClipsDescendants  = true
+	cooldownOverlay.Parent            = circle
+
+	local ovCorner = Instance.new("UICorner")
+	ovCorner.CornerRadius = UDim.new(1, 0)
+	ovCorner.Parent       = cooldownOverlay
+
+	-- Cooldown % text (inside overlay)
+	local cdText = nil
+	if not skillData.hasCharges then
+		cdText = Instance.new("TextLabel")
+		cdText.Size                  = UDim2.new(1, 0, 4, 0)  -- tall so it's always centered inside the circle even when overlay is partial
+		cdText.Position              = UDim2.new(0, 0, 0, 0)
+		cdText.AnchorPoint           = Vector2.new(0, 0)
+		cdText.BackgroundTransparency = 1
+		cdText.Text                  = ""
+		cdText.TextColor3            = Color3.fromRGB(255, 255, 255)
+		cdText.TextScaled            = true
+		cdText.Font                  = Enum.Font.GothamBold
+		cdText.ZIndex                = 6
+		cdText.Parent                = cooldownOverlay
+	end
+
+	-- Ultimate READY text (over circle)
+	local ultText = nil
+	if isUlt then
+		ultText = Instance.new("TextLabel")
+		ultText.Size                  = UDim2.new(1, -4, 1, -4)
+		ultText.AnchorPoint           = Vector2.new(0.5, 0.5)
+		ultText.Position              = UDim2.new(0.5, 0, 0.5, 0)
+		ultText.BackgroundTransparency = 1
+		ultText.Text                  = "READY"
+		ultText.TextColor3            = Color3.fromRGB(255, 230, 60)
+		ultText.TextScaled            = true
+		ultText.Font                  = Enum.Font.PermanentMarker
+		ultText.Rotation              = -8
+		ultText.ZIndex                = 5
+		ultText.Parent                = circle
+
+		local ultStroke = Instance.new("UIStroke")
+		ultStroke.Thickness = 2.5
+		ultStroke.Color     = Color3.fromRGB(0, 0, 0)
+		ultStroke.Parent    = ultText
+	end
+
+	-- ── Skill name label (below circle) ──
 	local nameLabel = Instance.new("TextLabel")
-	nameLabel.Size = UDim2.new(1.5, 0, 0, 40 * SF)
-	nameLabel.Position = UDim2.new(-0.25, 0, 0, 215 * SF)
+	nameLabel.Name                = "SkillName"
+	nameLabel.Size                = UDim2.new(1.4, 0, 0, LABEL_H)
+	nameLabel.AnchorPoint         = Vector2.new(0.5, 0)
+	nameLabel.Position            = UDim2.new(0.5, 0, 0, kbSize * 0.85 + 6 + circleD + 5)
 	nameLabel.BackgroundTransparency = 1
-	nameLabel.Text = skillData.name:upper()
-	nameLabel.TextColor3 = Color3.new(1, 1, 1)
-	nameLabel.TextScaled = true
-	nameLabel.Font = Enum.Font.GothamBlack
-	nameLabel.Parent = skillContainer
-	
-	local nameStroke = Instance.new("UIStroke")
-	nameStroke.Thickness = 2.5 * SF
-	nameStroke.Color = Color3.new(0, 0, 0)
-	nameStroke.Parent = nameLabel
+	nameLabel.Text                = skillData.name:upper()
+	nameLabel.TextColor3          = Color3.fromRGB(255, 255, 255)
+	nameLabel.TextScaled          = true
+	nameLabel.Font                = Enum.Font.GothamBlack
+	nameLabel.Parent              = slot
 
-	-- 3. Charges Circle (For Dash)
+	local nameStroke = Instance.new("UIStroke")
+	nameStroke.Thickness = 2
+	nameStroke.Color     = Color3.fromRGB(0, 0, 0)
+	nameStroke.Parent    = nameLabel
+
+	-- ── Charge badge (top-right of circle) ──
 	local chargeCountLabel = nil
 	if skillData.hasCharges then
-		local chargeCircle = Instance.new("Frame")
-		chargeCircle.Name = "ChargeCircle"
-		chargeCircle.Size = UDim2.new(0, 45 * SF, 0, 45 * SF)
-		chargeCircle.Position = UDim2.new(1, -22.5 * SF, 0, -22.5 * SF)
-		chargeCircle.BackgroundColor3 = Color3.new(1, 1, 1)
-		chargeCircle.BackgroundTransparency = 0
-		chargeCircle.ZIndex = 10
-		chargeCircle.Parent = cardMain
-		
-		local circleCorner = Instance.new("UICorner")
-		circleCorner.CornerRadius = UDim.new(1, 0)
-		circleCorner.Parent = chargeCircle
-		
-		local circleStroke = Instance.new("UIStroke")
-		circleStroke.Color = Color3.new(0, 0, 0)
-		circleStroke.Thickness = 3.5 * SF
-		circleStroke.Parent = chargeCircle
-		
+		local BADGE = math.floor(circleD * 0.38)
+
+		local badge = Instance.new("Frame")
+		badge.Name               = "ChargeBadge"
+		badge.Size               = UDim2.new(0, BADGE, 0, BADGE)
+		-- position relative to circle: top-right edge
+		badge.Position           = UDim2.new(0.5, circleD / 2 - BADGE * 0.35, 0, kbSize * 0.85 + 6 - BADGE * 0.4)
+		badge.BackgroundColor3   = Color3.fromRGB(255, 255, 255)
+		badge.BackgroundTransparency = 0
+		badge.BorderSizePixel    = 0
+		badge.ZIndex             = 10
+		badge.Parent             = slot
+
+		local badgeCorner = Instance.new("UICorner")
+		badgeCorner.CornerRadius = UDim.new(1, 0)
+		badgeCorner.Parent       = badge
+
+		local badgeStroke = Instance.new("UIStroke")
+		badgeStroke.Color    = Color3.fromRGB(0, 0, 0)
+		badgeStroke.Thickness = 2.5
+		badgeStroke.Parent   = badge
+
 		chargeCountLabel = Instance.new("TextLabel")
-		chargeCountLabel.Size = UDim2.new(1, 0, 1, 0)
+		chargeCountLabel.Size                 = UDim2.new(1, 0, 1, 0)
 		chargeCountLabel.BackgroundTransparency = 1
-		chargeCountLabel.Text = "3"
-		chargeCountLabel.TextColor3 = Color3.new(0, 0, 0)
-		chargeCountLabel.TextScaled = true
-		chargeCountLabel.Font = Enum.Font.GothamBold
-		chargeCountLabel.ZIndex = 11
-		chargeCountLabel.Parent = chargeCircle
+		chargeCountLabel.Text                 = "3"
+		chargeCountLabel.TextColor3           = Color3.fromRGB(0, 0, 0)
+		chargeCountLabel.TextScaled           = true
+		chargeCountLabel.Font                 = Enum.Font.GothamBold
+		chargeCountLabel.ZIndex               = 11
+		chargeCountLabel.Parent               = badge
 	end
 
 	table.insert(skillFrames, {
-		fill = fillFrame,
-		text = chargeTextLabel,
+		fill       = cooldownOverlay,
+		text       = cdText,
+		ultText    = ultText,
 		chargeText = chargeCountLabel,
-		data = skillData,
-		keybindBox = keybindBox
+		data       = skillData,
+		keybindBox = keybindBox,
+		circle     = circle,
 	})
 end
 
--- ============================================
--- STEP 3: RunServicing (DYNAMIC POSITIONING)
--- ============================================
-local function onRender()
-	local camera = workspace.CurrentCamera
-	if not camera or camera.ViewportSize.Y == 0 or camera.ViewportSize.X == 0 then return end
-	
-	local xRatio = camera.ViewportSize.X / camera.ViewportSize.Y
-	
-	-- Positioning: Aggressively pinned to the bottom-right corner
-	local offset = Vector3.new(3.8 * xRatio, -3.2, -10.5)
-	local newCframe = camera.CFrame * CFrame.new(offset)
-	
-	if frame then
-		frame.CFrame = newCframe
-	end
+for _, sd in ipairs(skillsData) do
+	buildSkillSlot(sd)
 end
 
-RunService:BindToRenderStep("3D_UI_System_PREMIUM", Enum.RenderPriority.Camera.Value + 1, onRender)
-
--- ============================================
--- Cooldown & Feedback Loop
--- ============================================
+-- ============================================================
+-- COOLDOWN & CHARGE UPDATE LOOP
+-- ============================================================
 RunService.Heartbeat:Connect(function()
 	local char = plr.Character
-	for _, skillFrame in ipairs(skillFrames) do
-		if skillFrame.data.hasCharges and char then
-			local charges = char:GetAttribute(skillFrame.data.name .. "Charges") or 0
-			local regenPercent = char:GetAttribute(skillFrame.data.name .. "RegenPercent") or 0
-			
-			if skillFrame.chargeText then skillFrame.chargeText.Text = tostring(charges) end
-			
-			local maxCharges = char:GetAttribute("Max" .. skillFrame.data.name .. "Charges") or 3
+	for _, sf in ipairs(skillFrames) do
+		if sf.data.hasCharges and char then
+			local charges    = char:GetAttribute(sf.data.name .. "Charges") or 0
+			local regenPct   = char:GetAttribute(sf.data.name .. "RegenPercent") or 0
+			local maxCharges = char:GetAttribute("Max" .. sf.data.name .. "Charges") or 3
+
+			if sf.chargeText then sf.chargeText.Text = tostring(charges) end
+
 			if charges < maxCharges then
-				skillFrame.fill.Size = UDim2.new(1, 0, 1 - regenPercent, 0)
+				sf.fill.Size = UDim2.new(1, 0, 1 - regenPct, 0)
 			else
-				skillFrame.fill.Size = UDim2.new(1, 0, 0, 0)
+				sf.fill.Size = UDim2.new(1, 0, 0, 0)
 			end
+
 		elseif CooldownManager then
-			local success, result = pcall(function() return CooldownManager:GetPercentage(skillFrame.data.name) end)
-			local charge = 100
-			if success and result then charge = result <= 1 and result * 100 or result end
-			
-			if charge < 100 then
-				skillFrame.fill.Size = UDim2.new(1, 0, 1 - (charge / 100), 0)
-			else
-				skillFrame.fill.Size = UDim2.new(1, 0, 0, 0)
+			local ok, result = pcall(function()
+				return CooldownManager:GetPercentage(sf.data.name)
+			end)
+			local pct = 100
+			if ok and result then
+				pct = result <= 1 and result * 100 or result
 			end
-			
-			if skillFrame.text then 
-				skillFrame.text.Text = charge >= 100 and "READY" or math.floor(charge) .. "%"
+
+			if pct < 100 then
+				sf.fill.Size     = UDim2.new(1, 0, 1 - (pct / 100), 0)
+				sf.fill.Position = UDim2.new(0, 0, 0, 0)
+			else
+				sf.fill.Size = UDim2.new(1, 0, 0, 0)
+			end
+
+			if sf.text then
+				sf.text.Text = pct >= 100 and "" or math.floor(pct) .. "%"
+			end
+			if sf.ultText then
+				sf.ultText.Text      = pct >= 100 and "READY" or math.floor(pct) .. "%"
+				sf.ultText.TextColor3 = pct >= 100
+					and Color3.fromRGB(255, 230, 60)
+					or  Color3.fromRGB(255, 255, 255)
 			end
 		else
-			skillFrame.fill.Size = UDim2.new(1, 0, 0, 0)
+			sf.fill.Size = UDim2.new(1, 0, 0, 0)
 		end
 	end
 end)
 
+-- ============================================================
+-- INPUT FEEDBACK
+-- ============================================================
 UserInputService.InputBegan:Connect(function(input, processed)
 	if processed then return end
-	for _, skillFrame in ipairs(skillFrames) do
-		local key = skillFrame.data.key
-		local isTriggered = false
-		
+	for _, sf in ipairs(skillFrames) do
+		local key       = sf.data.key
+		local triggered = false
+
 		if key == "M2" then
-			isTriggered = (input.UserInputType == Enum.UserInputType.MouseButton2)
+			triggered = (input.UserInputType == Enum.UserInputType.MouseButton2)
 		else
-			local keyMap = {["E"] = Enum.KeyCode.E, ["F"] = Enum.KeyCode.F, ["Q"] = Enum.KeyCode.Q}
-			isTriggered = (input.KeyCode == keyMap[key])
+			local keyMap = {E = Enum.KeyCode.E, F = Enum.KeyCode.F, Q = Enum.KeyCode.Q}
+			triggered    = (input.KeyCode == keyMap[key])
 		end
-		
-		if isTriggered then
-			skillFrame.keybindBox.BackgroundColor3 = Color3.new(1, 1, 1)
-			skillFrame.keybindBox.BackgroundTransparency = 0.2
-			task.delay(0.1, function() 
-				if skillFrame and skillFrame.keybindBox then
-					skillFrame.keybindBox.BackgroundTransparency = 0.5
-					skillFrame.keybindBox.BackgroundColor3 = Color3.new(0, 0, 0)
+
+		if triggered then
+			TweenService:Create(sf.circle,     TweenInfo.new(0.07), {BackgroundTransparency = 0}):Play()
+			TweenService:Create(sf.keybindBox, TweenInfo.new(0.07),
+				{BackgroundTransparency = 0.05, BackgroundColor3 = Color3.fromRGB(255,255,255)}):Play()
+
+			task.delay(0.13, function()
+				if sf.circle and sf.circle.Parent then
+					TweenService:Create(sf.circle, TweenInfo.new(0.18),
+						{BackgroundTransparency = sf.data.isUltimate and 0.0 or 0.06}):Play()
+				end
+				if sf.keybindBox and sf.keybindBox.Parent then
+					TweenService:Create(sf.keybindBox, TweenInfo.new(0.18),
+						{BackgroundTransparency = 0.42, BackgroundColor3 = Color3.fromRGB(0,0,0)}):Play()
 				end
 			end)
 		end
