@@ -1,0 +1,21 @@
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local statusRemoteEvent = ReplicatedStorage.Remotes.StatusRemoteEvent
+local timerRemoteEvent = ReplicatedStorage.Remotes.TimerRemoteEvent
+
+local player = Players.LocalPlayer
+local playerGui = player.PlayerGui
+local statusGui = playerGui:WaitForChild("StatusGui")
+local container = statusGui.MainFrame.Container
+
+local function onStatusRemoteEvent(status: string)
+	container.Status.Text = status
+end
+
+local function onTimerRemoteEvent(timer: number)
+	container.Timer.Text = timer
+end
+
+statusRemoteEvent.OnClientEvent:Connect(onStatusRemoteEvent)
+timerRemoteEvent.OnClientEvent:Connect(onTimerRemoteEvent)
