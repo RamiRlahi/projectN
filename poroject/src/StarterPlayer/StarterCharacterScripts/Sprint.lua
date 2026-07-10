@@ -24,9 +24,9 @@ local AirborneState = {
 	[Enum.HumanoidStateType.FallingDown] = true,
 }
 
-local function hasSwordEquipped()
+local function hasClassRunOverrideEquipped()
 	local tool = character:FindFirstChildWhichIsA("Tool")
-	return (tool and tool.Name == "Tool" or false)
+	return (tool and (tool.Name == "Tool" or tool.Name == "TimeClass") or false)
 end
 
 local function UpdateMovement()
@@ -40,8 +40,8 @@ local function UpdateMovement()
 		humanoid.WalkSpeed = RUN_SPEED
 	end
 
-	-- If the sword is equipped, let AutoEquipKatana.lua solely handle the sword sprint!
-	if hasSwordEquipped() then
+	-- If a class provides its own equipped run, let that script handle it.
+	if hasClassRunOverrideEquipped() then
 		if NormalSprintTrack.IsPlaying then
 			NormalSprintTrack:Stop(0.25)
 		end

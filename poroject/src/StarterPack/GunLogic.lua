@@ -36,6 +36,13 @@ local lastFire  = 0
 local reloading = false
 local equipped  = false
 
+local function updateAmmoDisplay()
+	tool:SetAttribute("Ammo", ammo)
+	tool:SetAttribute("MaxAmmo", MAX_AMMO)
+end
+
+updateAmmoDisplay()
+
 -- Dual-gun aiming animation (upper body only)
 local DUAL_AIM_ANIM_ID = "rbxassetid://90957862907806"
 local AIM_TIMEOUT       = 5          -- seconds of no shooting before aim pose fades
@@ -70,6 +77,7 @@ local function reload()
 	ammo = MAX_AMMO
 	shootLeft = true
 	reloading = false
+	updateAmmoDisplay()
 end
 
 local function fire()
@@ -84,6 +92,7 @@ local function fire()
 
 	shootLeft = not shootLeft
 	ammo = ammo - 1
+	updateAmmoDisplay()
 
 	local origin = muzzle.WorldPosition
 	local direction = (mouse.Hit.Position - origin).Unit * MAX_DISTANCE
@@ -119,6 +128,7 @@ end
 
 tool.Equipped:Connect(function()
 	equipped = true
+	updateAmmoDisplay()
 
 	-- Load the aim animation once
 	local character = player.Character

@@ -14,13 +14,62 @@ local upperTorso = if isR15 then character:WaitForChild("UpperTorso") else nil
 local lowerTorso = if isR15 then character:WaitForChild("LowerTorso") else character:WaitForChild("Torso")
 
 -- Rig-specific joints
-local neck = head:WaitForChild("Neck")
-local waist = if isR15 then upperTorso:WaitForChild("Waist") else nil
-local rootJoint = if isR15 then lowerTorso:WaitForChild("Root") else hrp:WaitForChild("RootJoint")
+local function isAnimJoint(instance)
+	return instance:IsA("Motor6D") or instance:IsA("AnimationConstraint")
+end
 
-local neckC0 = neck.C0
-local waistC0 = if waist then waist.C0 else nil
-local rootJointC0 = rootJoint.C0
+local function findAnimJoint(name, ...)
+	for index = 1, select("#", ...) do
+		local parent = select(index, ...)
+		if parent then
+			local child = parent:FindFirstChild(name)
+			if child and isAnimJoint(child) then
+				return child
+			end
+		end
+	end
+
+	for _, descendant in character:GetDescendants() do
+		if descendant.Name == name and isAnimJoint(descendant) then
+			return descendant
+		end
+	end
+
+	warn("dynamicmovement could not find animation joint named " .. name .. "; skipping that joint")
+	return nil
+end
+
+local function getJointBase(joint)
+	if not joint then
+		return nil
+	end
+
+	if joint:IsA("Motor6D") then
+		return joint.C0
+	end
+
+	return CFrame.new()
+end
+
+local function setJointOffset(joint, base, offset)
+	if not joint then
+		return
+	end
+
+	if joint:IsA("Motor6D") then
+		joint.C0 = base * offset
+	else
+		joint.Transform =offset
+	end
+end
+
+local neck = findAnimJoint("Neck", head, upperTorso, lowerTorso)
+local waist = if isR15 then findAnimJoint("Waist", upperTorso, lowerTorso) else nil
+local rootJoint = if isR15 then findAnimJoint("Root", lowerTorso, hrp) else findAnimJoint("RootJoint", hrp, lowerTorso)
+
+local neckBase = getJointBase(neck)
+local waistBase = getJointBase(waist)
+local rootJointBase = getJointBase(rootJoint)
 
 -- Animation setup
 local walkAnim = Instance.new("Animation")
@@ -82,16 +131,16 @@ RunService.RenderStepped:Connect(function()
 	local isAiming = character:GetAttribute("IsAiming")
 
 	if isR15 then
-		rootJoint.C0 = rootJointC0 * CFrame.Angles(0, relativeAngle, 0)
+		setJointOffset(rootJoint, rootJointBase, CFrame.Angles(0, relativeAngle, 0))
 		-- Skip upper-body joint overrides when dual-gun aim is active
 		if not isAiming then
-			waist.C0 = waistC0 * CFrame.Angles(tiltAngle * 0.5, -relativeAngle, 0)
-			neck.C0 = neckC0 * CFrame.Angles(tiltAngle * 0.5, 0, 0)
+			setJointOffset(waist, waistBase, CFrame.Angles(tiltAngle * 0.5, -relativeAngle, 0))
+			setJointOffset(neck, neckBase, CFrame.Angles(tiltAngle * 0.5, 0, 0))
 		end
 	else
-		rootJoint.C0 = rootJointC0 * CFrame.Angles(0, 0, relativeAngle)
-		if not isAiming then
-			neck.C0 = neckC0 * CFrame.Angles(tiltAngle, -relativeAngle, 0)
+		setJointOffset(rootJoint, rootJointBase, CFrame.Angles(0, 0, relativeAngle))
+		if not isAiming and neck then
+			setJointOffset(neck, neckBase, CFrame.Angles(tiltAngle, -relativeAngle, 0))
 		end
 	end
 
